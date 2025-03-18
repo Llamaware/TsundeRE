@@ -1,0 +1,18 @@
+{
+    "Token": "PutYourBotTokenHere",
+    "GuildId": "1234567890",
+    "LogChannelId": "1234567890",
+    "EmbedChannelId": "1234567890",
+    "EnableLogs": "false",
+    "UpdateDelay": "60",
+    "GhidraServerName": "TsundeRE-A",
+    "GhidraServerIp": "123.456.789.10",
+    "GhidraServerPort": "5000",
+    "GhidraServerPassword": "mySecretPassphrase",
+    "IgnoreList": [],
+    "TitleText": "Ghidra Server Status",
+    "FooterText": "Updates every minute!",
+    "CustomEmojis": "false",
+    "HubOnlineEmoji": "<:emoji_ok:1234567890>",
+    "HubOfflineEmoji": "<:emoji_ng:1234567890>"
+}

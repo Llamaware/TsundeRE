@@ -92,7 +92,7 @@ public class GhidracordPlugin extends ProgramPlugin {
 		} else {
 			desc = "Working offline";
 		}
-        String status = "File: " + activeProject.getName() + "/" + this.getCurrentProgram().getName();
+        String status = "File: [" + activeProject.getName() + "]/" + this.getCurrentProgram().getName();
 
         //String desc = this.getCurrentProgram().getName();
 

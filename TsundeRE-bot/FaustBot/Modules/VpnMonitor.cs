@@ -1,9 +1,9 @@
 ﻿using Discord;
 using Discord.Interactions;
 using Microsoft.Extensions.Configuration;
-using SoftEther.VPNServerRpc;
-using System.Globalization;
+using Newtonsoft.Json;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Timers;
 
 namespace FaustBot.Services
@@ -15,58 +15,31 @@ namespace FaustBot.Services
 
         private static System.Timers.Timer countdownTimer;
 
-        //VpnServerRpc api;
-        //string hubName;
-        IConfigurationSection hubListConfig;
+        string serverName;
         IConfigurationSection ignoreListConfig;
         string serverIp;
         string serverPassword;
-        List<Hub> hubList = new List<Hub>();
-        List<Hub> prevHubList = new List<Hub>();
+        int serverPort;
         ulong guildId;
         ulong logChannelId;
         int delay;
         bool enableLogs;
         ulong embedChannelId;
-        bool virtualHubMode;
         List<string> ignoreList = new List<string>();
-        string terminalName;
-        string selectedTimeZone;
-        bool displaySessionTime;
         string titleText;
         string footerText;
-        bool mentionUserIds;
         bool useCustomEmojis;
         string hubOnlineEmoji;
         string hubOfflineEmoji;
-
-        //private static Dictionary<string, UserSessionInfo> _currentUsernames = new Dictionary<string, UserSessionInfo>();
+        GhidraServer serverInstance;
 
         public VpnMonitor(CommandHandler handler, IServiceProvider services, IConfiguration config)
         {
             _handler = handler;
-            serverIp = config["VpnServerIp"];
-            if (!virtualHubMode)
-            {
-                serverPassword = config["VpnServerPassword"];
-            }
-            //hubName = config["VpnHubName"];
-            hubListConfig = config.GetSection("VpnHubList");
-            virtualHubMode = bool.Parse(config["VirtualHubMode"]);
-            for (int i = 0; i < hubListConfig.GetChildren().Count(); i++)
-            {
-                string hubName = config[$"VpnHubList:{i}"];
-                if (virtualHubMode)
-                {
-                    string hubPassword = config[$"VpnHubPasswords:{i}"];
-                    hubList.Add(new Hub(hubName, hubPassword));
-                }
-                else
-                {
-                    hubList.Add(new Hub(hubName));
-                }
-            }
-            //prevHubList = hubList;
+            serverName = config["GhidraServerName"];
+            serverIp = config["GhidraServerIp"];
+            serverPassword = config["GhidraServerPassword"];
+            serverPort = int.Parse(config["GhidraServerPort"]);
             guildId = ulong.Parse(config["GuildId"]);
             logChannelId = ulong.Parse(config["LogChannelId"]);
             embedChannelId = ulong.Parse(config["EmbedChannelId"]);
@@ -79,12 +52,8 @@ namespace FaustBot.Services
                 ignoreList.Add(ignoreItem);
             }
 
-            terminalName = config["TerminalName"];
-            selectedTimeZone = config["TimeZone"];
-            displaySessionTime = bool.Parse(config["DisplaySessionTime"]);
             titleText = config["TitleText"];
             footerText = config["FooterText"];
-            mentionUserIds = bool.Parse(config["MentionUserIds"]);
             useCustomEmojis = bool.Parse(config["CustomEmojis"]);
             if (useCustomEmojis)
             {
@@ -92,28 +61,28 @@ namespace FaustBot.Services
                 hubOfflineEmoji = config["HubOfflineEmoji"];
             }
 
-            //api = new VpnServerRpc(serverIp, 443, serverPassword, "");
+            serverInstance = new GhidraServer(serverName, serverIp, serverPort, serverPassword);
         }
 
 
         [RequireOwner]
-        [SlashCommand("start", "Start VPN monitoring service.")]
+        [SlashCommand("start", "Start Ghidra server monitoring service.")]
         public async Task StartVpnMonitor()
         {
             if (countdownTimer != null)
             {
-                await RespondAsync("VPN monitoring service is already running.");
+                await RespondAsync("Ghidra server monitoring service is already running.");
                 return;
             }
 
-            Console.WriteLine("Starting VPN monitoring service.");
+            Console.WriteLine("Starting Ghidra server monitoring service.");
 
             try
             {
-                UpdateHubList();
-                await UpdateEmbed();
+                await UpdateServerStatus(serverInstance);
+                await UpdateEmbed(serverInstance);
                 SetTimer();
-                await RespondAsync("VPN monitoring service started.");
+                await RespondAsync("Ghidra server monitoring service started.");
             }
             catch (Exception ex)
             {
@@ -124,62 +93,39 @@ namespace FaustBot.Services
         }
 
         [RequireOwner]
-        [SlashCommand("stop", "Stop VPN monitoring service.")]
+        [SlashCommand("stop", "Stop Ghidra server monitoring service.")]
         public async Task StopVpnMonitor()
         {
-            Console.WriteLine("Stopping VPN monitoring service...");
+            Console.WriteLine("Stopping Ghidra server monitoring service...");
             if (countdownTimer == null)
             {
-                await RespondAsync("VPN monitoring service is not running.");
+                await RespondAsync("Ghidra server monitoring service is not running.");
                 return;
             }
             DisposeTimer();
             await DeleteEmbed();
-            await RespondAsync("VPN monitoring service stopped.");
+            await RespondAsync("Ghidra server monitoring service stopped.");
         }
 
-        [SlashCommand("list", "List current VPN sessions on one hub.")]
-        public async Task ListVpnSessions(string hubName)
+        [SlashCommand("list", "List current Ghidra sessions on the server.")]
+        public async Task ListVpnSessions()
         {
-            Console.WriteLine("Listing current VPN sessions...");
+            GhidraServer server = serverInstance;
+            Console.WriteLine("Listing current Ghidra sessions...");
+
             try
             {
-                Hub foundHub = hubList.FirstOrDefault(h => string.Equals(h.HubName, hubName, StringComparison.OrdinalIgnoreCase));
                 string output;
-                if (foundHub != null)
+                server.ClearAllUsernames();
+                server._userSessions = await GetUsersAsync(server);
+                List<string> usernames = server._userSessions;
+                if (usernames.Count == 0)
                 {
-                    VpnRpcEnumSession out_rpc_enum_session = Get_EnumSession(foundHub);
-
-                    var usernameAndCreatedTimePairs = out_rpc_enum_session.SessionList
-                        .Where(session => !ignoreList.Contains(session.Username_str, StringComparer.OrdinalIgnoreCase))
-                        .Select(session => new
-                        {
-                            Username = session.Username_str,
-                            CreatedTime = session.CreatedTime_dt
-                        })
-                        .ToList();
-
-                    TimeZoneInfo sessionTimeZone = TimeZoneInfo.FindSystemTimeZoneById(selectedTimeZone);
-
-                    if (usernameAndCreatedTimePairs.Count == 0)
-                    {
-                        output = $"No users are currently connected to {foundHub.HubName}.";
-                    }
-                    else
-                    {
-                        output = string.Join(Environment.NewLine,
-                            usernameAndCreatedTimePairs.Select(pair =>
-                            {
-                                DateTime sessionTime = TimeZoneInfo.ConvertTimeFromUtc(pair.CreatedTime, sessionTimeZone);
-                                string humanReadableTime = sessionTime.ToString("dddd, MMMM dd, h:mm:ss tt", CultureInfo.InvariantCulture);
-                                return $"Username: {pair.Username}, Session Created: {humanReadableTime}";
-                            }));
-                    }
-
+                    output = $"No users are currently connected to {server.ServerName}.";
                 }
                 else
                 {
-                    output = "Hub not found.";
+                    output = $"Users currently connected to {server.ServerName}: {string.Join(", ", usernames)}";
                 }
                 Console.WriteLine(output);
                 await RespondAsync(output);
@@ -192,140 +138,41 @@ namespace FaustBot.Services
             }
         }
 
-        [SlashCommand("status", "Print VPN hub status.")]
-        public async Task VpnStatus(string hubName)
+        public async Task UpdateServerStatus(GhidraServer server)
         {
-            Console.WriteLine("Printing VPN hub status...");
-            try
-            {
-                Hub foundHub = hubList.FirstOrDefault(h => string.Equals(h.HubName, hubName, StringComparison.OrdinalIgnoreCase));
-                if (foundHub != null)
-                {
-                    VpnRpcHubStatus out_rpc_hub_status = Test_GetHubStatus(foundHub);
-                    bool onlineStatus = out_rpc_hub_status.Online_bool;
-                    string serverStatus = onlineStatus ? "online" : "offline";
-                    string message = $"The {foundHub.HubName} hub is currently {serverStatus}.";
-                    Console.WriteLine(message);
-                    await RespondAsync(message);
-                }
-                else
-                {
-                    Console.WriteLine("Hub not found.");
-                    await RespondAsync("Hub not found.");
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error: {ex.Message}");
-                Console.WriteLine($"Stack Trace: {ex.StackTrace}");
-                await RespondAsync("An error occurred. See console for details.");
-            }
-        }
-
-        public void UpdateHubList()
-        {
-            prevHubList = hubList.Select(hub => hub.DeepCopy()).ToList();
-
-            foreach (Hub hub in hubList)
-            {
-                hub.ClearAllUsernames();
-                bool hubStatus = Test_GetHubStatus(hub).Online_bool;
-                hub.OnlineStatus = hubStatus;
-                VpnRpcEnumSession newVpnRpcEnumSession = Get_EnumSession(hub);
-
-                foreach (var session in newVpnRpcEnumSession.SessionList)
-                {
-                    UserSessionInfo userSessionInfo = new UserSessionInfo
-                    {
-                        CreatedTime = session.CreatedTime_dt,
-                        LastCommTime = session.LastCommTime_dt
-                    };
-
-                    hub.AddUsername(session.Username_str, userSessionInfo);
-                }
-            }
+            server.ClearAllUsernames();
+            server._userSessions = await GetUsersAsync(server);
         }
 
 
-        public async Task CheckForUserChanges()
+        public async Task CheckForEvents(GhidraServer server)
         {
-            Console.WriteLine("Checking for user changes...");
-
-            TimeZoneInfo sessionTimeZone;
-            try
-            {
-                sessionTimeZone = TimeZoneInfo.FindSystemTimeZoneById(selectedTimeZone);
-            }
-            catch (Exception)
-            {
-                Console.WriteLine($"Invalid or missing timezone {selectedTimeZone}. Defaulting to UTC.");
-                sessionTimeZone = TimeZoneInfo.Utc;
-            }
+            Console.WriteLine("Checking for events...");
 
             var tasks = new List<Task>();
 
-            foreach (Hub hub in hubList)
+            var events = await GetEventsAsync(server);
+
+            foreach (var evt in events)
             {
-                string hubName = hub.HubName;
-                var currentUsers = hub._userSessions;
-
-                var prevHub = prevHubList.Find(hub => hub.HubName == hubName);
-                if (prevHub == null)
+                Match match = Regex.Match(evt.message, @"\((\S+?)@");
+                if (match.Success)
                 {
-                    Console.WriteLine($"No previous hub found for {hubName}, skipping.");
-                    continue;
-                }
-                var prevUsers = prevHub._userSessions;
-
-                foreach (var pair in currentUsers.Where(pair => !prevUsers.ContainsKey(pair.Key)))
-                {
-                    if (ignoreList.Contains(pair.Key, StringComparer.OrdinalIgnoreCase))
+                    string username = match.Groups[1].Value;
+                    if (ignoreList.Contains(username))
                     {
-                        continue;
+                        continue; // Skip this event if the username is in the ignore list.
                     }
-                    string message;
-                    DateTime sessionTime = TimeZoneInfo.ConvertTimeFromUtc(pair.Value.CreatedTime, sessionTimeZone);
-                    string humanReadableTime = sessionTime.ToString("dddd, MMMM dd, h:mm:ss tt", CultureInfo.InvariantCulture);
-                    if (mentionUserIds)
-                    {
-                        message = $"User <@{pair.Key}> has joined the {hubName} hub at {humanReadableTime}.";
-                    }
-                    else
-                    {
-                        message = $"User {pair.Key} has joined the {hubName} hub at {humanReadableTime}.";
-                    }
-                    Console.WriteLine(message);
-                    tasks.Add(Context.Client.GetGuild(guildId).GetTextChannel(logChannelId).SendMessageAsync(message));
                 }
 
-                foreach (var pair in prevUsers.Where(pair => !currentUsers.ContainsKey(pair.Key)))
-                {
-                    if (ignoreList.Contains(pair.Key, StringComparer.OrdinalIgnoreCase))
-                    {
-                        continue;
-                    }
-                    string message;
-                    DateTime sessionTime = TimeZoneInfo.ConvertTimeFromUtc(pair.Value.LastCommTime, sessionTimeZone);
-                    string humanReadableTime = sessionTime.ToString("dddd, MMMM dd, h:mm:ss tt", CultureInfo.InvariantCulture);
-                    if (mentionUserIds)
-                    {
-                        message = $"User <@{pair.Key}> has left the {hubName} hub. Last seen at {humanReadableTime}.";
-                    }
-                    else
-                    {
-                        message = $"User {pair.Key} has left the {hubName} hub. Last seen at {humanReadableTime}.";
-                    }
-                    Console.WriteLine(message);
-                    tasks.Add(Context.Client.GetGuild(guildId).GetTextChannel(logChannelId).SendMessageAsync(message));
-                }
+                string message = $"{evt.timestamp} - {evt.message}";
+                Console.WriteLine(message);
+                tasks.Add(Context.Client.GetGuild(guildId).GetTextChannel(logChannelId).SendMessageAsync(message));
             }
-
             await Task.WhenAll(tasks);
         }
 
-
-
-        public async Task UpdateEmbed()
+        public async Task UpdateEmbed(GhidraServer server)
         {
             //List<Hub> hubList = new List<Hub>();
 
@@ -335,76 +182,51 @@ namespace FaustBot.Services
                 Title = titleText,
             };
 
-            foreach (Hub hub in hubList)
+
+            string hubName = server.ServerName;
+            string serverStatus;
+            if (useCustomEmojis)
             {
-                string hubName = hub.HubName;
-                string serverStatus;
-                if (useCustomEmojis)
-                {
-                    serverStatus = hub.OnlineStatus ? hubOnlineEmoji : hubOfflineEmoji;
-                }
-                else
-                {
-                    serverStatus = hub.OnlineStatus ? "[Online]" : "[Offline]";
-                }
-                var usernames = hub.Usernames;
-
-                StringBuilder userList = new StringBuilder("", 200);
-
-                if (hub.OnlineStatus)
-                {
-                    foreach (var username in usernames)
-                    {
-                        if (!ignoreList.Contains(username, StringComparer.OrdinalIgnoreCase))
-                        {
-                            if (mentionUserIds)
-                            {
-                                userList.Append("<@");
-                                userList.Append(username);
-                                userList.Append('>');
-                            }
-                            else
-                            {
-                                userList.Append(username);
-
-                            }
-                            if (displaySessionTime)
-                            {
-                                DateTime utcDate = DateTime.UtcNow;
-                                DateTime sessionTime = hub._userSessions[username].CreatedTime;
-                                TimeSpan duration = utcDate.Subtract(sessionTime);
-                                string humanReadableDuration = string.Format(CultureInfo.InvariantCulture, "{0}:{1:D2}:{2:D2}",
-                                    (int)duration.TotalHours, duration.Minutes, duration.Seconds);
-                                userList.Append(" - ");
-                                userList.Append(humanReadableDuration);
-
-                            }
-                            userList.Append('\n');
-                        }
-                    }
-                    if (usernames.Count == 0 || userList.Length == 0)
-                    {
-                        userList.Append("No Players");
-                    }
-                }
-                else
-                {
-                    userList.Append("Hub Offline");
-                }
-
-                StringBuilder fieldName = new StringBuilder("", 50);
-                fieldName.Append(serverStatus);
-                fieldName.Append(' ');
-                fieldName.Append(hubName);
-                fieldName.Append(": ");
-                fieldName.Append(usernames.Where(username => !ignoreList.Contains(username, StringComparer.OrdinalIgnoreCase)).Count().ToString());
-                fieldName.Append("/4 Players");
-                if (usernames.Contains(terminalName, StringComparer.OrdinalIgnoreCase))
-                {
-                    fieldName.Append(" :regional_indicator_d::regional_indicator_t:");
-                }
-                embed.AddField(fieldName.ToString(), userList.ToString());
+                serverStatus = server.OnlineStatus ? hubOnlineEmoji : hubOfflineEmoji;
             }
+            else
+            {
+                serverStatus = server.OnlineStatus ? "[Online]" : "[Offline]";
+            }
+            var usernames = server._userSessions;
+
+            StringBuilder userList = new StringBuilder("", 200);
+
+            if (server.OnlineStatus)
+            {
+                foreach (var username in usernames)
+                {
+                    if (!ignoreList.Contains(username, StringComparer.OrdinalIgnoreCase))
+                    {
+                        userList.Append(username);
+                        userList.Append('\n');
+                    }
+                }
+                if (usernames.Count == 0 || userList.Length == 0)
+                {
+                    userList.Append("No Users");
+                }
+            }
+            else
+            {
+                userList.Append("Server Offline");
+            }
+
+            StringBuilder fieldName = new StringBuilder("", 50);
+            fieldName.Append(serverStatus);
+            fieldName.Append(' ');
+            fieldName.Append(hubName);
+            fieldName.Append(": ");
+            fieldName.Append(usernames.Where(username => !ignoreList.Contains(username, StringComparer.OrdinalIgnoreCase)).Count().ToString());
+            fieldName.Append(" User(s)");
+
+            embed.AddField(fieldName.ToString(), userList.ToString());
+
 
             // Or with methods
             //embed.AddField("Field title",
@@ -453,22 +275,16 @@ namespace FaustBot.Services
 
         private async void OnTimedEvent(object source, ElapsedEventArgs e)
         {
-            //VpnRpcEnumSession in_rpc_enum_session = new VpnRpcEnumSession()
-            //{
-            //    HubName_str = hubName,
-            //};
-            //VpnRpcEnumSession out_rpc_enum_session = api.EnumSession(in_rpc_enum_session);
 
             try
             {
-                UpdateHubList();
+                await UpdateServerStatus(serverInstance);
                 if (enableLogs)
                 {
-                    await CheckForUserChanges();
+                    await CheckForEvents(serverInstance);
                 }
-
                 await DeleteEmbed();
-                await UpdateEmbed();
+                await UpdateEmbed(serverInstance);
             }
             catch (Exception ex)
             {
@@ -477,101 +293,91 @@ namespace FaustBot.Services
             }
         }
 
-        public VpnRpcEnumSession Get_EnumSession(Hub hub)
+
+        // Function to call the /users endpoint and return a list of users.
+        public static async Task<List<string>> GetUsersAsync(GhidraServer server)
         {
-            //Console.WriteLine("Begin: Test_EnumSession");
-
-            VpnRpcEnumSession in_rpc_enum_session = new VpnRpcEnumSession()
+            string ip = server.ServerIp;
+            int port = server.ServerPort;
+            string passphrase = server.ServerPassword;
+            string url = $"http://{ip}:{port}/users";
+            using (HttpClient client = new HttpClient())
             {
-                HubName_str = hub.HubName,
-            };
-            VpnServerRpc api = GetApi(hub);
-            VpnRpcEnumSession out_rpc_enum_session = api.EnumSession(in_rpc_enum_session);
-
-            //print_object(out_rpc_enum_session);
-
-            //Console.WriteLine("End: Test_EnumSession");
-            //Console.WriteLine("-----");
-            //Console.WriteLine();
-
-            return out_rpc_enum_session;
-        }
-
-        public VpnRpcHubStatus Test_GetHubStatus(Hub hub)
-        {
-            //Console.WriteLine("Begin: Test_GetHubStatus");
-
-            VpnRpcHubStatus in_rpc_hub_status = new VpnRpcHubStatus()
-            {
-                HubName_str = hub.HubName,
-            };
-            VpnServerRpc api = GetApi(hub);
-            VpnRpcHubStatus out_rpc_hub_status = api.GetHubStatus(in_rpc_hub_status);
-
-            return(out_rpc_hub_status);
-
-            //Console.WriteLine("End: Test_GetHubStatus");
-            //Console.WriteLine("-----");
-            //Console.WriteLine();
-        }
-
-        public VpnServerRpc GetApi(Hub hub)
-        {
-            VpnServerRpc api;
-            if (virtualHubMode)
-            {
-                api = new VpnServerRpc(serverIp, 443, hub.HubPassword, hub.HubName);
+                client.DefaultRequestHeaders.Add("X-Passphrase", passphrase);
+                HttpResponseMessage response = await client.GetAsync(url);
+                if (response.IsSuccessStatusCode)
+                {
+                    server.OnlineStatus = true;
+                    Console.WriteLine("API users call succeeded.");
+                    string json = await response.Content.ReadAsStringAsync();
+                    var usersResponse = JsonConvert.DeserializeObject<UsersResponse>(json);
+                    return usersResponse?.users ?? new List<string>();
+                }
+                else
+                {
+                    server.OnlineStatus = false;
+                    Console.WriteLine("API users call failed with status code: " + response.StatusCode);
+                    return new List<string>();
+                }
             }
-            else
-            {
-                api = new VpnServerRpc(serverIp, 443, serverPassword, "");
-            }
-            return api;
         }
 
-        public void print_object(object obj)
+        // Function to call the /events endpoint and return a list of events.
+        public static async Task<List<EventItem>> GetEventsAsync(GhidraServer server)
         {
-            var setting = new Newtonsoft.Json.JsonSerializerSettings()
+            string ip = server.ServerIp;
+            int port = server.ServerPort;
+            string passphrase = server.ServerPassword;
+            string url = $"http://{ip}:{port}/events";
+            using (HttpClient client = new HttpClient())
             {
-                NullValueHandling = Newtonsoft.Json.NullValueHandling.Include,
-                ReferenceLoopHandling = Newtonsoft.Json.ReferenceLoopHandling.Error,
-            };
-            string str = Newtonsoft.Json.JsonConvert.SerializeObject(obj, Newtonsoft.Json.Formatting.Indented, setting);
-            Console.WriteLine(str);
+                client.DefaultRequestHeaders.Add("X-Passphrase", passphrase);
+                HttpResponseMessage response = await client.GetAsync(url);
+                if (response.IsSuccessStatusCode)
+                {
+                    Console.WriteLine("API events call succeeded.");
+                    string json = await response.Content.ReadAsStringAsync();
+                    var eventsResponse = JsonConvert.DeserializeObject<EventsResponse>(json);
+                    return eventsResponse?.events ?? new List<EventItem>();
+                }
+                else
+                {
+                    Console.WriteLine("API events call failed with status code: " + response.StatusCode);
+                    return new List<EventItem>();
+                }
+            }
         }
     }
 
-    public class UserSessionInfo
-    {
-        public DateTime CreatedTime { get; set; }
-        public DateTime LastCommTime { get; set; }
-    }
 
-    public class Hub
+
+    public class GhidraServer
     {
-        public string HubName { get; set; }
-        public string HubPassword { get; set; }
+        public string ServerName { get; set; }
+        public string ServerIp { get; set; }
+        public int ServerPort { get; set; }
+        public string ServerPassword { get; set; }
         public bool OnlineStatus { get; set; }
-        public Dictionary<string, UserSessionInfo> _userSessions;
+
+        public List<string> _userSessions;
 
         // Constructor
-        public Hub(string hubName, string hubPassword = "")
+        public GhidraServer(string name, string ip, int port, string password)
         {
-            HubName = hubName;
-            HubPassword = hubPassword;
+            ServerName = name;
+            ServerPort = port;
+            ServerIp = ip;
+            ServerPassword = password;
             OnlineStatus = false;
-            _userSessions = new Dictionary<string, UserSessionInfo>();
+            _userSessions = new List<string>();
         }
 
-        // Property to access usernames as a list
-        public List<string> Usernames => _userSessions.Keys.ToList();
-
         // Method to add a username with session info
-        public void AddUsername(string username, UserSessionInfo session)
+        public void AddUsername(string username)
         {
-            if (!string.IsNullOrEmpty(username) && !_userSessions.ContainsKey(username))
+            if (!string.IsNullOrEmpty(username) && !_userSessions.Contains(username))
             {
-                _userSessions.Add(username, session);
+                _userSessions.Add(username);
             }
         }
 
@@ -580,23 +386,24 @@ namespace FaustBot.Services
         {
             _userSessions.Clear();
         }
+    }
 
-        // Method to create a deep copy of the Hub object
-        public Hub DeepCopy()
-        {
-            var newHub = new Hub(this.HubName, this.HubPassword)
-            {
-                OnlineStatus = this.OnlineStatus,
-                _userSessions = this._userSessions.ToDictionary(
-                    entry => entry.Key,
-                    entry => new UserSessionInfo
-                    {
-                        CreatedTime = entry.Value.CreatedTime,
-                        LastCommTime = entry.Value.LastCommTime
-                    }
-                )
-            };
-            return newHub;
-        }
+    // Class representing an event item from the API response
+    public class EventItem
+    {
+        public string timestamp { get; set; }
+        public string message { get; set; }
+    }
+
+    // Class representing the /users API response
+    public class UsersResponse
+    {
+        public List<string> users { get; set; }
+    }
+
+    // Class representing the /events API response
+    public class EventsResponse
+    {
+        public List<EventItem> events { get; set; }
     }
 }
