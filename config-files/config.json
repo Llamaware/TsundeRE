@@ -15,4 +15,6 @@
     "CustomEmojis": "false",
     "HubOnlineEmoji": "<:emoji_ok:1234567890>",
     "HubOfflineEmoji": "<:emoji_ng:1234567890>"
+    "UseTsundereLogs": "false",
+    "TsundereJsonPath": "tsundere.json"
 }

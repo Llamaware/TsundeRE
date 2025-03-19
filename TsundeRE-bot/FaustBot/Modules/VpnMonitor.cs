@@ -31,7 +31,10 @@ namespace FaustBot.Services
         bool useCustomEmojis;
         string hubOnlineEmoji;
         string hubOfflineEmoji;
+        string tsundereJsonPath;
+        bool useTsundereLogs;
         GhidraServer serverInstance;
+        MessageData tsundereMessages;
 
         public VpnMonitor(CommandHandler handler, IServiceProvider services, IConfiguration config)
         {
@@ -59,6 +62,14 @@ namespace FaustBot.Services
             {
                 hubOnlineEmoji = config["HubOnlineEmoji"];
                 hubOfflineEmoji = config["HubOfflineEmoji"];
+            }
+            
+            tsundereJsonPath = config["TsundereJsonPath"];
+            useTsundereLogs = bool.Parse(config["UseTsundereLogs"]);
+
+            if (useTsundereLogs && !File.Exists(tsundereJsonPath))
+            {
+                tsundereMessages = MessageReader.ReadMessages(tsundereJsonPath);
             }
 
             serverInstance = new GhidraServer(serverName, serverIp, serverPort, serverPassword);
@@ -165,11 +176,38 @@ namespace FaustBot.Services
                     }
                 }
 
-                string message = $"{evt.timestamp} - {evt.message}";
+                string message = HandleEventMessage(evt.timestamp, evt.message);
                 Console.WriteLine(message);
                 tasks.Add(Context.Client.GetGuild(guildId).GetTextChannel(logChannelId).SendMessageAsync(message));
             }
             await Task.WhenAll(tasks);
+        }
+
+        public string HandleEventMessage(string timestamp, string message)
+        {
+            string result;
+            if (useTsundereLogs)
+            {
+                string pattern = @"^(?<filePath>[^:]+):\s*(?<content>.*)\s*\((?<username>[^)]+)\)$";
+                Match match = Regex.Match(message, pattern);
+                if (match.Success)
+                {
+                    string filePath = match.Groups["filePath"].Value;
+                    string content = match.Groups["content"].Value;
+                    string username = match.Groups["username"].Value;
+                    string newContent = TsundereMessageHelper.GetTsundereMessage(content, tsundereMessages);
+                    result = $"{timestamp} - {filePath}: {newContent} ({username})";
+                }
+                else
+                {
+                    result = $"{timestamp} - {message}";
+                }
+            }
+            else
+            {
+                result = $"{timestamp} - {message}";
+            }
+            return result;
         }
 
         public async Task UpdateEmbed(GhidraServer server)
@@ -357,7 +395,110 @@ namespace FaustBot.Services
         }
     }
 
+    // Define a class to represent the message arrays.
+    public class MessageData
+    {
+        public List<string> checkoutGrantedMsgs { get; set; }
+        public List<string> fileCreatedMsgs { get; set; }
+        public List<string> checkoutEndedMsgs { get; set; }
+        public List<string> versionCreatedMsgs { get; set; }
+        public List<string> notListeningMsgs { get; set; }
+        public List<string> handleDisposedMsgs { get; set; }
+        public List<string> generatedHandleMsgs { get; set; }
+        public List<string> fileDeletedMsgs { get; set; }
+        public List<string> checkInStartedMsgs { get; set; }
+        public List<string> versionOpenedReadOnlyMsgs { get; set; }
+    }
 
+    public class MessageReader
+    {
+        // Reads the JSON file and returns a MessageData object.
+        public static MessageData ReadMessages(string filePath)
+        {
+            try
+            {
+                string jsonContent = File.ReadAllText(filePath);
+                MessageData messages = JsonConvert.DeserializeObject<MessageData>(jsonContent);
+                return messages;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Error reading messages: " + ex.Message);
+                return null;
+            }
+        }
+    }
+
+    public class TsundereMessageHelper
+    {
+        private static Random rnd = new Random();
+
+        // Returns a tsundere message for the given content based on normalized keywords.
+        public static string GetTsundereMessage(string content, MessageData messages)
+        {
+            // Normalize the content:
+            // Remove any numbers in parentheses, e.g. "checkout (8) granted" -> "checkout  granted"
+            string normalized = Regex.Replace(content, @"\(\d+\)", "");
+            // Remove standalone digits (like "version 1 created" -> "version created")
+            normalized = Regex.Replace(normalized, @"\b\d+\b", "");
+            normalized = normalized.ToLower().Trim();
+
+            // Now match normalized content to categories.
+            if (normalized.Contains("checkout") && normalized.Contains("granted"))
+            {
+                return GetRandomMessage(messages.checkoutGrantedMsgs);
+            }
+            else if (normalized.Contains("file") && normalized.Contains("created"))
+            {
+                return GetRandomMessage(messages.fileCreatedMsgs);
+            }
+            else if (normalized.Contains("checkout") && normalized.Contains("ended"))
+            {
+                return GetRandomMessage(messages.checkoutEndedMsgs);
+            }
+            else if (normalized.Contains("version") && normalized.Contains("created"))
+            {
+                return GetRandomMessage(messages.versionCreatedMsgs);
+            }
+            else if (normalized.Contains("not listening"))
+            {
+                return GetRandomMessage(messages.notListeningMsgs);
+            }
+            else if (normalized.Contains("handle disposed"))
+            {
+                return GetRandomMessage(messages.handleDisposedMsgs);
+            }
+            else if (normalized.Contains("generated handle"))
+            {
+                return GetRandomMessage(messages.generatedHandleMsgs);
+            }
+            else if (normalized.Contains("file") && normalized.Contains("deleted"))
+            {
+                return GetRandomMessage(messages.fileDeletedMsgs);
+            }
+            else if (normalized.Contains("check-in") && normalized.Contains("started"))
+            {
+                return GetRandomMessage(messages.checkInStartedMsgs);
+            }
+            else if (normalized.Contains("version") && normalized.Contains("opened read-only"))
+            {
+                return GetRandomMessage(messages.versionOpenedReadOnlyMsgs);
+            }
+            else
+            {
+                // If no matching category is found, return the original content or a default message.
+                return content;
+            }
+        }
+
+        // Picks a random message from a list.
+        private static string GetRandomMessage(List<string> list)
+        {
+            if (list == null || list.Count == 0)
+                return "";
+            return list[rnd.Next(list.Count)];
+        }
+    }
 
     public class GhidraServer
     {

@@ -1,0 +1,72 @@
+{
+  "checkoutGrantedMsgs": [
+    "Hmph, you managed to get a checkout granted, but don't think it's because I like you or anything!",
+    "Well, I guess you weren't completely useless this time—checkout granted.",
+    "Don't get a big head now, it's just a checkout granted, baka!",
+    "I can't believe you actually did it... checkout granted.",
+    "Checkout granted, but it's not like I care or anything."
+  ],
+  "fileCreatedMsgs": [
+    "A file was created, and you didn't mess it up... somewhat.",
+    "File created, you dummy—seriously, it's not that impressive.",
+    "I suppose a file creation is acceptable, don't overdo it, baka!",
+    "Look, a file created. It's not like I think you're smart or something.",
+    "File created. Don't get cocky, it's just basic stuff."
+  ],
+  "checkoutEndedMsgs": [
+    "Checkout ended, and it's not like I was worried or anything!",
+    "Good, checkout ended... now try not to screw up next time.",
+    "Checkout ended. Finally, you did something right, but don't let it go to your head!",
+    "Hmph, checkout ended. I guess that was expected from you.",
+    "Checkout ended. It's about time, baka!"
+  ],
+  "versionCreatedMsgs": [
+    "Version created, even you can manage that, I guess.",
+    "Hmph, a new version was created. Don't think this means you're competent!",
+    "Version created. Maybe you're not as useless as you seem, baka!",
+    "A version is created. I'm surprised you didn't mess it up.",
+    "Version created. Not that I care, but it's something."
+  ],
+  "notListeningMsgs": [
+    "Not listening, huh? Typical. Just like you, always giving up!",
+    "Oh great, not listening! I knew you were unreliable, baka!",
+    "Not listening! That's all I expected from someone like you.",
+    "Not listening? I told you not to be so useless!",
+    "Not listening, obviously. Figures, you're hopeless!"
+  ],
+  "handleDisposedMsgs": [
+    "Handle disposed, so you finally decided to disconnect, huh?",
+    "Good riddance! Handle disposed. Don't come back too soon, baka!",
+    "Handle disposed. Well, at least you're consistent when you leave.",
+    "Handle disposed. It's not like I missed you or anything!",
+    "Handle disposed. Finally, some peace and quiet."
+  ],
+  "generatedHandleMsgs": [
+    "Generated handle. Look at you, connecting all on your own. Not that I care!",
+    "Hmph, generated handle. It's about time you showed up.",
+    "Generated handle, and it's not like I'm happy or anything!",
+    "Wow, generated handle. You might be useful after all, baka!",
+    "Generated handle. Just try not to mess up, okay?"
+  ],
+  "fileDeletedMsgs": [
+    "File deleted? Figures you’d manage to mess that up. Not that I'm surprised, baka!",
+    "File deleted. Hmph, at least it's gone now.",
+    "File deleted, just like I expected from you.",
+    "File deleted. It was bound to happen eventually, didn't you think so?",
+    "File deleted. Finally, you're getting rid of your mistakes, I guess."
+  ],
+  "checkInStartedMsgs": [
+    "Check-in started, huh? Don't get the wrong idea—I'm not happy you're finally taking responsibility or anything!",
+    "Hmph, check-in started. I guess you're trying to clean up your mess, but don't think you're impressive.",
+    "Check-in started. Just try not to screw it up, baka!",
+    "Check-in started. It's not like I care, but maybe you'll manage something right for once.",
+    "Check-in started. Even you can do something productive—don't let it go to your head!"
+  ],
+  "versionOpenedReadOnlyMsgs": [
+    "Version opened read-only. Not that I expect any changes from you, baka!",
+    "Hmph, version opened read-only. You can just watch and learn, no editing allowed.",
+    "Version opened read-only. I guess it's safe since you won't ruin it with your clumsy attempts.",
+    "Version opened read-only. Keep your hands off—it's better this way.",
+    "Version opened read-only. It's for your eyes only, so don't even think about trying to edit it."
+  ]
+}

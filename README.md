@@ -4,7 +4,7 @@ Full Discord integration for Ghidra servers. Can display all users currently con
 
 ### TsundeRE Server
 
-Required for the Client or Bot to function. Serves an API on port `5000` (by default) that allows you to get `/users` and `/events` from the Ghidra server. Requires Flask to run.
+**Required** for the Client or Bot to function. Serves an API on port `5000` (by default) that allows you to get `/users` and `/events` from the Ghidra server. Requires Flask to run.
 
 Change the passphrase and log file location in `log-server.py`. Sudo is required to read from the `server.log` file.
 
@@ -18,6 +18,8 @@ sudo python3 log-server.py
 
 Ghidra plugin that provides Discord Rich Presence and displays other users connected to the server. Fork of [Ghidracord](https://github.com/KawaiiFiveO/ghidracord).
 
+Install this like any other Ghidra extension. (Currently supports v11.3.1)
+
 You need to set your API URL, username, and passphrase in `tsundere.properties` for full functionality. Place the file in your Ghidra root directory.
 
 Note: Other users connecting to the server **do not** need to have TsundeRE Client installed in order for it to function for you.
@@ -28,7 +30,7 @@ Discord bot that provides status updates on the server and maybe even more funct
 
 Usage and functionality are similar to [FaustBot](https://github.com/Llamaware/FaustBot). Read FaustBot's README for more details.
 
-`config.json` needs to be in the same directory as the bot.
+`config.json` needs to be in the same directory as the bot. `tsundere.json` is an optional feature but must be present if you set `useTsundereLogs` to `true`.
 
 ### Licenses
 
