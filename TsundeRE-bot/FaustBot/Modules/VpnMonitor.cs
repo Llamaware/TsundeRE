@@ -2,6 +2,7 @@
 using Discord.Interactions;
 using Microsoft.Extensions.Configuration;
 using Newtonsoft.Json;
+using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Timers;
@@ -67,9 +68,17 @@ namespace FaustBot.Services
             tsundereJsonPath = config["TsundereJsonPath"];
             useTsundereLogs = bool.Parse(config["UseTsundereLogs"]);
 
-            if (useTsundereLogs && !File.Exists(tsundereJsonPath))
+            if (useTsundereLogs)
             {
-                tsundereMessages = MessageReader.ReadMessages(tsundereJsonPath);
+                if (File.Exists(tsundereJsonPath))
+                {
+                    tsundereMessages = MessageReader.ReadMessages(tsundereJsonPath);
+                }
+                else
+                {
+                    Console.WriteLine($"Tsundere log file not found: {tsundereJsonPath}");
+                    useTsundereLogs = false;
+                }
             }
 
             serverInstance = new GhidraServer(serverName, serverIp, serverPort, serverPassword);
@@ -159,31 +168,56 @@ namespace FaustBot.Services
         public async Task CheckForEvents(GhidraServer server)
         {
             Console.WriteLine("Checking for events...");
-
+            var events = await GetEventsAsync(server);
             var tasks = new List<Task>();
 
-            var events = await GetEventsAsync(server);
+            // Sort events by timestamp (ascending order).
+            var sortedEvents = events.OrderBy(evt =>
+                DateTime.ParseExact(evt.timestamp, "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)).ToList();
 
-            foreach (var evt in events)
+            // Use a StringBuilder to accumulate all event messages.
+            StringBuilder sb = new StringBuilder();
+            string lastTimestamp = "";
+
+            foreach (var evt in sortedEvents)
             {
+                // Filter events by ignoring those from users in the ignore list.
                 Match match = Regex.Match(evt.message, @"\((\S+?)@");
                 if (match.Success)
                 {
                     string username = match.Groups[1].Value;
                     if (ignoreList.Contains(username))
                     {
-                        continue; // Skip this event if the username is in the ignore list.
+                        continue; // Skip this event.
                     }
                 }
 
-                string message = HandleEventMessage(evt.timestamp, evt.message);
-                Console.WriteLine(message);
-                tasks.Add(Context.Client.GetGuild(guildId).GetTextChannel(logChannelId).SendMessageAsync(message));
+                string newMessage = HandleEventMessage(evt.message);
+                // Check if this event's timestamp is the same as the previous one.
+                if (!string.IsNullOrEmpty(lastTimestamp) && evt.timestamp == lastTimestamp)
+                {
+                    // Omit the timestamp if it's identical.
+                    sb.AppendLine(newMessage);
+                }
+                else
+                {
+                    // Include the timestamp for a new time value.
+                    sb.AppendLine($"{evt.timestamp} - {newMessage}");
+                    lastTimestamp = evt.timestamp;
+                }
+            }
+
+            // Send all the accumulated events as one single message.
+            string finalMessage = sb.ToString();
+            if (!string.IsNullOrEmpty(finalMessage))
+            {
+                tasks.Add(Context.Client.GetGuild(guildId).GetTextChannel(logChannelId).SendMessageAsync(finalMessage));
             }
             await Task.WhenAll(tasks);
         }
 
-        public string HandleEventMessage(string timestamp, string message)
+
+        public string HandleEventMessage(string message)
         {
             string result;
             if (useTsundereLogs)
@@ -196,16 +230,16 @@ namespace FaustBot.Services
                     string content = match.Groups["content"].Value;
                     string username = match.Groups["username"].Value;
                     string newContent = TsundereMessageHelper.GetTsundereMessage(content, tsundereMessages);
-                    result = $"{timestamp} - {filePath}: {newContent} ({username})";
+                    result = $"{filePath}: {newContent} ({username})";
                 }
                 else
                 {
-                    result = $"{timestamp} - {message}";
+                    result = message;
                 }
             }
             else
             {
-                result = $"{timestamp} - {message}";
+                result = message;
             }
             return result;
         }
@@ -259,8 +293,17 @@ namespace FaustBot.Services
             fieldName.Append(' ');
             fieldName.Append(hubName);
             fieldName.Append(": ");
-            fieldName.Append(usernames.Where(username => !ignoreList.Contains(username, StringComparer.OrdinalIgnoreCase)).Count().ToString());
-            fieldName.Append(" User(s)");
+            int numUsers = usernames.Where(username => !ignoreList.Contains(username, StringComparer.OrdinalIgnoreCase)).Count();
+            fieldName.Append(numUsers.ToString());
+
+            if (numUsers == 1)
+            {
+                fieldName.Append(" User");
+            }
+            else
+            {
+                fieldName.Append(" Users");
+            }
 
             embed.AddField(fieldName.ToString(), userList.ToString());
 
@@ -408,6 +451,7 @@ namespace FaustBot.Services
         public List<string> fileDeletedMsgs { get; set; }
         public List<string> checkInStartedMsgs { get; set; }
         public List<string> versionOpenedReadOnlyMsgs { get; set; }
+        public List<string> repositoryCreatedMsgs { get; set; }
     }
 
     public class MessageReader
@@ -483,6 +527,10 @@ namespace FaustBot.Services
             else if (normalized.Contains("version") && normalized.Contains("opened read-only"))
             {
                 return GetRandomMessage(messages.versionOpenedReadOnlyMsgs);
+            }
+            else if (normalized.Contains("repository created"))
+            {
+                return GetRandomMessage(messages.repositoryCreatedMsgs);
             }
             else
             {
