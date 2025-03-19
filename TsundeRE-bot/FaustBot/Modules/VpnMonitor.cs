@@ -76,7 +76,7 @@ namespace FaustBot.Services
                 }
                 else
                 {
-                    Console.WriteLine($"Tsundere log file not found: {tsundereJsonPath}");
+                    Console.WriteLine($"Tsundere json file not found: {tsundereJsonPath}");
                     useTsundereLogs = false;
                 }
             }
@@ -377,6 +377,7 @@ namespace FaustBot.Services
         // Function to call the /users endpoint and return a list of users.
         public static async Task<List<string>> GetUsersAsync(GhidraServer server)
         {
+            Console.WriteLine("Checking for users...");
             string ip = server.ServerIp;
             int port = server.ServerPort;
             string passphrase = server.ServerPassword;
@@ -421,17 +422,26 @@ namespace FaustBot.Services
             using (HttpClient client = new HttpClient())
             {
                 client.DefaultRequestHeaders.Add("X-Passphrase", passphrase);
-                HttpResponseMessage response = await client.GetAsync(url);
-                if (response.IsSuccessStatusCode)
+                try
                 {
-                    Console.WriteLine("API events call succeeded.");
-                    string json = await response.Content.ReadAsStringAsync();
-                    var eventsResponse = JsonConvert.DeserializeObject<EventsResponse>(json);
-                    return eventsResponse?.events ?? new List<EventItem>();
+                    HttpResponseMessage response = await client.GetAsync(url);
+                    if (response.IsSuccessStatusCode)
+                    {
+                        Console.WriteLine("API events call succeeded.");
+                        string json = await response.Content.ReadAsStringAsync();
+                        var eventsResponse = JsonConvert.DeserializeObject<EventsResponse>(json);
+                        return eventsResponse?.events ?? new List<EventItem>();
+                    }
+                    else
+                    {
+                        Console.WriteLine("API events call failed with status code: " + response.StatusCode);
+                        return new List<EventItem>();
+                    }
                 }
-                else
+                catch (Exception ex)
                 {
-                    Console.WriteLine("API events call failed with status code: " + response.StatusCode);
+                    Console.WriteLine($"Error: {ex.Message}");
+                    Console.WriteLine($"Stack Trace: {ex.StackTrace}");
                     return new List<EventItem>();
                 }
             }
