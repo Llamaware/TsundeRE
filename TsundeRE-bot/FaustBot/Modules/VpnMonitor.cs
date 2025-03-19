@@ -174,7 +174,6 @@ namespace FaustBot.Services
 
         public async Task UpdateEmbed(GhidraServer server)
         {
-            //List<Hub> hubList = new List<Hub>();
 
             var embed = new EmbedBuilder
             {
@@ -304,19 +303,28 @@ namespace FaustBot.Services
             using (HttpClient client = new HttpClient())
             {
                 client.DefaultRequestHeaders.Add("X-Passphrase", passphrase);
-                HttpResponseMessage response = await client.GetAsync(url);
-                if (response.IsSuccessStatusCode)
-                {
-                    server.OnlineStatus = true;
-                    Console.WriteLine("API users call succeeded.");
-                    string json = await response.Content.ReadAsStringAsync();
-                    var usersResponse = JsonConvert.DeserializeObject<UsersResponse>(json);
-                    return usersResponse?.users ?? new List<string>();
+                try {
+                    HttpResponseMessage response = await client.GetAsync(url);
+                    if (response.IsSuccessStatusCode)
+                    {
+                        server.OnlineStatus = true;
+                        Console.WriteLine("API users call succeeded.");
+                        string json = await response.Content.ReadAsStringAsync();
+                        var usersResponse = JsonConvert.DeserializeObject<UsersResponse>(json);
+                        return usersResponse?.users ?? new List<string>();
+                    }
+                    else
+                    {
+                        server.OnlineStatus = false;
+                        Console.WriteLine("API users call failed with status code: " + response.StatusCode);
+                        return new List<string>();
+                    }
                 }
-                else
+                catch (Exception ex)
                 {
                     server.OnlineStatus = false;
-                    Console.WriteLine("API users call failed with status code: " + response.StatusCode);
+                    Console.WriteLine($"Error: {ex.Message}");
+                    Console.WriteLine($"Stack Trace: {ex.StackTrace}");
                     return new List<string>();
                 }
             }
