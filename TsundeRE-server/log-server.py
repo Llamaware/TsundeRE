@@ -71,7 +71,7 @@ def process_line(line):
                 username = m.group(1)
                 connected_users[username] = connected_users.get(username, 0) + 1
         elif "handle disposed" in message:
-            m = re.search(r'\((\S+)@', message)
+            m = re.search(r'\((\S+?)(?:@|\))', message)
             if m:
                 username = m.group(1)
                 if username in connected_users:
